@@ -1,0 +1,7 @@
+.env
+*.local
+bin/
+obj/
+.vs/
+.vscode/
+node_modules/

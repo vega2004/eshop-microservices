@@ -1,0 +1,36 @@
+services:
+
+  catalog.api:
+    image: ${DOCKER_REGISTRY-}catalogapi
+    build:
+      context: .
+      dockerfile: Services/Catalog/Catalog.API/Dockerfile
+
+  basket.api:
+    image: ${DOCKER_REGISTRY-}basketapi
+    build:
+      context: .
+      dockerfile: Services/Basket/Basket.API/Dockerfile
+
+  auth.api:
+    image: ${DOCKER_REGISTRY-}authapi
+    build:
+      context: .
+      dockerfile: Services/Auth/Auth.API/Dockerfile
+
+  catalogdb:
+    image: postgres:15
+
+  basketdb:
+    image: postgres:15
+
+  authdb:
+    image: postgres:15
+
+  distributedcache:
+    image: redis:latest
+
+volumes:
+  postgres_catalog:
+  postgres_basket:
+  postgres_auth:
