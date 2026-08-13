@@ -8,7 +8,6 @@ using Orders.API.Clients;
 using Orders.API.Data;
 using Orders.API.Exceptions;
 using Orders.API.HealthChecks;
-using Orders.API.Services;
 using Orders.API.Settings;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -55,7 +54,6 @@ builder.Services.AddSingleton(serviceProvider =>
 });
 // Safe as singleton: MongoOrderRepository is stateless and only wraps thread-safe MongoDB driver types.
 builder.Services.AddSingleton<IOrderRepository, MongoOrderRepository>();
-builder.Services.AddSingleton<IOrderTicketService, OrderTicketService>();
 builder.Services.AddHostedService<OrderIndexInitializer>();
 
 builder.Services.AddHttpClient<BasketClient>(client =>
@@ -328,32 +326,6 @@ app.MapGet("/api/orders/{id:guid}", async (
 .RequireAuthorization()
 .WithName("GetOrderById")
 .Produces<Order>(StatusCodes.Status200OK)
-.ProducesProblem(StatusCodes.Status401Unauthorized)
-.ProducesProblem(StatusCodes.Status403Forbidden)
-.ProducesProblem(StatusCodes.Status404NotFound)
-.WithOpenApi();
-
-app.MapGet("/api/orders/{id:guid}/ticket", async (
-    Guid id,
-    ClaimsPrincipal user,
-    IOrderRepository orders,
-    IOrderTicketService ticketService,
-    CancellationToken cancellationToken) =>
-{
-    var customerId = user.GetRequiredCustomerId();
-    var order = await orders.GetById(id, cancellationToken)
-        ?? throw new OrderNotFoundException(id);
-
-    EnsureOrderAccess(user, customerId, order);
-
-    var ticket = ticketService.Generate(order);
-    var fileName = $"ticket-{order.OrderNumber}.pdf";
-
-    return Results.File(ticket, "application/pdf", fileName);
-})
-.RequireAuthorization()
-.WithName("GetOrderTicket")
-.Produces(StatusCodes.Status200OK, contentType: "application/pdf")
 .ProducesProblem(StatusCodes.Status401Unauthorized)
 .ProducesProblem(StatusCodes.Status403Forbidden)
 .ProducesProblem(StatusCodes.Status404NotFound)

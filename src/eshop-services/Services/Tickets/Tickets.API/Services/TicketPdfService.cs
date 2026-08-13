@@ -1,13 +1,13 @@
 using System.Globalization;
 using System.Text;
 
-namespace Orders.API.Services;
+namespace Tickets.API.Services;
 
-public class OrderTicketService : IOrderTicketService
+public class TicketPdfService : ITicketPdfService
 {
     private static readonly CultureInfo MexicoCulture = CultureInfo.GetCultureInfo("es-MX");
 
-    public byte[] Generate(Order order)
+    public byte[] Generate(OrderDto order)
     {
         var lines = BuildLines(order);
         var content = BuildContentStream(lines);
@@ -23,7 +23,7 @@ public class OrderTicketService : IOrderTicketService
         return BuildPdf(objects);
     }
 
-    private static List<string> BuildLines(Order order)
+    private static List<string> BuildLines(OrderDto order)
     {
         var lines = new List<string>
         {
@@ -32,7 +32,7 @@ public class OrderTicketService : IOrderTicketService
             string.Empty,
             $"Folio: {order.OrderNumber}",
             $"Fecha: {order.CreatedAt.ToLocalTime():dd/MM/yyyy HH:mm}",
-            $"Estado: {order.Status}",
+            $"Estado: {GetStatusLabel(order.Status)}",
             $"Cliente: {GetDisplayValue(order.CustomerUserName)}",
             $"Correo: {GetDisplayValue(order.CustomerEmail)}",
             string.Empty,
@@ -111,6 +111,24 @@ public class OrderTicketService : IOrderTicketService
     private static string FormatCurrency(decimal value)
     {
         return value.ToString("C", MexicoCulture);
+    }
+
+    private static string GetStatusLabel(System.Text.Json.JsonElement status)
+    {
+        if (status.ValueKind == System.Text.Json.JsonValueKind.Number && status.TryGetInt32(out var statusNumber))
+        {
+            return statusNumber switch
+            {
+                0 => "Pending",
+                1 => "Confirmed",
+                2 => "Cancelled",
+                _ => "Unknown"
+            };
+        }
+
+        return status.ValueKind == System.Text.Json.JsonValueKind.String
+            ? status.GetString() ?? "Unknown"
+            : "Unknown";
     }
 
     private static string GetDisplayValue(string value)
