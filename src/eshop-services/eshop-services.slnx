@@ -12,6 +12,9 @@
   <Folder Name="/Services/Catalog/">
     <Project Path="Services/Catalog/Catalog.API/Catalog.API.csproj" />
   </Folder>
+  <Folder Name="/Services/Orders/">
+    <Project Path="Services/Orders/Orders.API/Orders.API.csproj" />
+  </Folder>
   <Project Path="docker-compose.dcproj">
     <Build />
   </Project>
