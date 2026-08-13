@@ -9,6 +9,8 @@ import BasketPage from './features/basket/pages/BasketPage.jsx'
 import CatalogPage from './features/catalog/pages/CatalogPage.jsx'
 import CreateProductPage from './features/catalog/pages/CreateProductPage.jsx'
 import ProductDetailsPage from './features/catalog/pages/ProductDetailsPage.jsx'
+import AdminOrdersPage from './features/orders/pages/AdminOrdersPage.jsx'
+import OrdersPage from './features/orders/pages/OrdersPage.jsx'
 import NotFoundPage from './pages/NotFoundPage.jsx'
 
 function App() {
@@ -35,6 +37,22 @@ function App() {
               <ProtectedRoute>
                 <BasketPage />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/orders"
+            element={
+              <ProtectedRoute>
+                <OrdersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/orders"
+            element={
+              <RoleProtectedRoute allowedRoles={['Admin']}>
+                <AdminOrdersPage />
+              </RoleProtectedRoute>
             }
           />
           <Route path="*" element={<NotFoundPage />} />

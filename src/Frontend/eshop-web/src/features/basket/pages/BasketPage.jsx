@@ -1,16 +1,25 @@
 import { Link } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ConfirmDialog from '../../../components/common/ConfirmDialog.jsx'
 import ErrorMessage from '../../../components/common/ErrorMessage.jsx'
 import Loading from '../../../components/common/Loading.jsx'
 import SuccessMessage from '../../../components/common/SuccessMessage.jsx'
 import { getProductById } from '../../catalog/services/catalogService.js'
+import { useAuth } from '../../auth/hooks/useAuth.js'
+import {
+  createOrder,
+  getOrderErrorMessage,
+  getOrderStatusLabel,
+  getTicketErrorMessage,
+} from '../../orders/services/ordersService.js'
+import { getOrderTicket, openTicketPdf } from '../../orders/services/ticketsService.js'
 import BasketItem from '../components/BasketItem.jsx'
 import { useBasket } from '../hooks/useBasket.js'
 
 const DELETE_BASKET_ERROR_MESSAGE = 'No fue posible eliminar el carrito.'
 const UPDATE_ITEM_ERROR_MESSAGE = 'No fue posible actualizar el producto del carrito.'
 const REMOVE_ITEM_ERROR_MESSAGE = 'No fue posible eliminar el producto del carrito.'
+const TAX_RATE = 0.16
 
 const priceFormatter = new Intl.NumberFormat('es-MX', {
   style: 'currency',
@@ -19,15 +28,21 @@ const priceFormatter = new Intl.NumberFormat('es-MX', {
 
 function BasketPage() {
   const { error, items, loading, totalPrice, clearBasket, updateItemQuantity, removeItem } = useBasket()
+  const { accessToken, isAuthenticated } = useAuth()
   const [clearingBasket, setClearingBasket] = useState(false)
+  const [creatingOrder, setCreatingOrder] = useState(false)
+  const [ticketLoading, setTicketLoading] = useState(false)
   const [updatingProductId, setUpdatingProductId] = useState(null)
   const [removingProductId, setRemovingProductId] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
   const [successMessage, setSuccessMessage] = useState(null)
+  const [orderError, setOrderError] = useState(null)
+  const [createdOrder, setCreatedOrder] = useState(null)
   const [stockByProductId, setStockByProductId] = useState({})
   const [stockUnavailableIds, setStockUnavailableIds] = useState(() => new Set())
   const [productToRemove, setProductToRemove] = useState(null)
   const [showClearDialog, setShowClearDialog] = useState(false)
+  const idempotencyKeyRef = useRef(null)
 
   useEffect(() => {
     if (items.length === 0) {
@@ -76,9 +91,12 @@ function BasketPage() {
       setClearingBasket(true)
       setDeleteError(null)
       setSuccessMessage(null)
+      setOrderError(null)
 
       await clearBasket()
       setSuccessMessage('Carrito eliminado correctamente.')
+      setCreatedOrder(null)
+      idempotencyKeyRef.current = null
     } catch {
       setDeleteError(DELETE_BASKET_ERROR_MESSAGE)
     } finally {
@@ -99,6 +117,8 @@ function BasketPage() {
       setUpdatingProductId(item.productId)
       setDeleteError(null)
       setSuccessMessage(null)
+      setOrderError(null)
+      setCreatedOrder(null)
 
       await updateItemQuantity(item.productId, quantity)
     } catch {
@@ -117,6 +137,8 @@ function BasketPage() {
       setRemovingProductId(productToRemove.productId)
       setDeleteError(null)
       setSuccessMessage(null)
+      setOrderError(null)
+      setCreatedOrder(null)
 
       await removeItem(productToRemove.productId)
       setSuccessMessage('Producto eliminado del carrito correctamente.')
@@ -128,8 +150,61 @@ function BasketPage() {
     }
   }
 
+  async function handleCreateOrder() {
+    if (!accessToken) {
+      setOrderError('Inicia sesión para realizar la compra.')
+      return
+    }
+
+    if (!hasItems) {
+      setOrderError('Agrega productos al carrito antes de comprar.')
+      return
+    }
+
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = `order-${crypto.randomUUID()}`
+    }
+
+    try {
+      setCreatingOrder(true)
+      setOrderError(null)
+      setSuccessMessage(null)
+
+      const order = await createOrder(accessToken, idempotencyKeyRef.current)
+      setCreatedOrder(order)
+      setSuccessMessage('Compra realizada correctamente.')
+      idempotencyKeyRef.current = null
+    } catch (requestError) {
+      setOrderError(getOrderErrorMessage(requestError))
+    } finally {
+      setCreatingOrder(false)
+    }
+  }
+
+  async function handleViewCreatedOrderTicket() {
+    if (!createdOrder || !accessToken) {
+      return
+    }
+
+    try {
+      setTicketLoading(true)
+      setOrderError(null)
+
+      const ticket = await getOrderTicket(createdOrder.id, accessToken)
+      openTicketPdf(ticket, createdOrder.orderNumber)
+    } catch (requestError) {
+      setOrderError(getTicketErrorMessage(requestError))
+    } finally {
+      setTicketLoading(false)
+    }
+  }
+
   const hasItems = items.length > 0
   const currentError = error
+  const subtotal = Number.isFinite(totalPrice) ? totalPrice : 0
+  const tax = subtotal * TAX_RATE
+  const orderTotal = subtotal + tax
+  const canCreateOrder = hasItems && isAuthenticated && Boolean(accessToken) && !creatingOrder
 
   return (
     <section className="page-card basket-page">
@@ -144,6 +219,7 @@ function BasketPage() {
 
       <SuccessMessage message={successMessage} />
       <ErrorMessage message={deleteError} />
+      <ErrorMessage message={orderError} />
 
       {!loading && !currentError && !hasItems && (
         <div className="basket-empty">
@@ -176,17 +252,100 @@ function BasketPage() {
 
           <aside className="basket__footer" aria-label="Resumen del carrito">
             <p className="basket__summary-label">Resumen del carrito</p>
-            <p className="basket__total">{priceFormatter.format(totalPrice)}</p>
+            <dl className="basket__totals">
+              <div>
+                <dt>Subtotal</dt>
+                <dd>{priceFormatter.format(subtotal)}</dd>
+              </div>
+              <div>
+                <dt>Impuestos (16%)</dt>
+                <dd>{priceFormatter.format(tax)}</dd>
+              </div>
+              <div className="basket__totals-grand-total">
+                <dt>Total</dt>
+                <dd>{priceFormatter.format(orderTotal)}</dd>
+              </div>
+            </dl>
+            <button
+              className="basket__checkout-button"
+              type="button"
+              disabled={!canCreateOrder}
+              onClick={handleCreateOrder}
+            >
+              {creatingOrder ? 'Procesando...' : 'Realizar compra'}
+            </button>
             <button
               className="basket__delete-button"
               type="button"
-              disabled={clearingBasket}
+              disabled={clearingBasket || creatingOrder}
               onClick={() => setShowClearDialog(true)}
             >
               {clearingBasket ? 'Vaciando...' : 'Vaciar carrito'}
             </button>
           </aside>
         </div>
+      )}
+
+      {createdOrder && (
+        <article className="order-confirmation" aria-label="Confirmación de orden">
+          <div>
+            <p className="order-confirmation__label">Orden creada</p>
+            <h2>Compra realizada correctamente</h2>
+          </div>
+
+          <dl className="order-confirmation__summary">
+            <div>
+              <dt>Folio</dt>
+              <dd>{createdOrder.orderNumber || 'Folio pendiente'}</dd>
+            </div>
+            <div>
+              <dt>Fecha</dt>
+              <dd>{new Date(createdOrder.createdAt).toLocaleString('es-MX')}</dd>
+            </div>
+            <div>
+              <dt>Estado</dt>
+              <dd>{getOrderStatusLabel(createdOrder.status)}</dd>
+            </div>
+            <div>
+              <dt>Subtotal</dt>
+              <dd>{priceFormatter.format(Number(createdOrder.subtotal) || 0)}</dd>
+            </div>
+            <div>
+              <dt>Impuestos</dt>
+              <dd>{priceFormatter.format(Number(createdOrder.tax) || 0)}</dd>
+            </div>
+            <div>
+              <dt>Total</dt>
+              <dd>{priceFormatter.format(Number(createdOrder.total) || 0)}</dd>
+            </div>
+          </dl>
+
+          <ul className="order-confirmation__items" aria-label="Productos de la orden">
+            {(createdOrder.items ?? []).map((item) => (
+              <li key={item.productId}>
+                <span>{item.productName}</span>
+                <span>
+                  {item.quantity} x {priceFormatter.format(Number(item.unitPrice) || 0)} ={' '}
+                  {priceFormatter.format(Number(item.lineTotal) || 0)}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="order-confirmation__actions">
+            <Link className="page-link" to="/orders">
+              Ver mis órdenes
+            </Link>
+            <button
+              className="order-card__button"
+              type="button"
+              disabled={ticketLoading}
+              onClick={handleViewCreatedOrderTicket}
+            >
+              {ticketLoading ? 'Generando...' : 'Ver ticket PDF'}
+            </button>
+          </div>
+        </article>
       )}
 
       {productToRemove && (

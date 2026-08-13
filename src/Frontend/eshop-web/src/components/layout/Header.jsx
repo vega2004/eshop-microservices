@@ -24,6 +24,7 @@ function Header() {
             Catálogo
           </NavLink>
           {isAdmin && <NavLink to="/admin/products/new">Nuevo producto</NavLink>}
+          {isAdmin && <NavLink to="/admin/orders">Gestión de órdenes</NavLink>}
           {isAuthenticated ? (
             <>
               <NavLink to="/basket">
@@ -35,6 +36,7 @@ function Header() {
                   {loading ? '...' : itemCount}
                 </span>
               </NavLink>
+              <NavLink to="/orders">Mis órdenes</NavLink>
               <span className="site-nav__user">{user?.userName}</span>
               <button className="site-nav__button" type="button" onClick={handleLogout}>
                 Cerrar sesión
